@@ -139,7 +139,7 @@ const formattedEndDate = computed(() => formatDate(endDate.value));
 
 const ticks = computed(() => generateTicks());
 
-const isMobile = ref(window.innerWidth <= 768);
+const isMobile = ref(false);
 
 onMounted(() => {
   window.addEventListener("mousemove", onMouseMove);

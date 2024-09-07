@@ -1,17 +1,13 @@
 <template>
   <div class="date-slider">
-    <div class="view-toggle">
+    <div v-if="showToggle" class="view-toggle">
       <button
-        :class="{ active: viewMode === 'years' }"
-        @click="switchView('years')"
+        v-for="option in toggleOptions"
+        :key="option.mode"
+        :class="{ active: viewMode === option.mode }"
+        @click="switchView(option.mode)"
       >
-        Все года
-      </button>
-      <button
-        :class="{ active: viewMode === 'months' }"
-        @click="switchView('months')"
-      >
-        Месяца
+        {{ option.label }}
       </button>
     </div>
 
@@ -35,7 +31,8 @@
           :style="{ left: `${endThumbPosition}%` }"
           @mousedown="startDrag('end')"
         >
-          <div class="tooltip tooltip_right">
+          <div class="tooltip">
+            <div class="triangle"></div>
             {{ formattedEndDate }}
           </div>
         </div>
@@ -47,7 +44,7 @@
           :key="tick.position"
           :class="{
             bold: tick.isYear,
-            'hide-on-mobile': !tick.isYear && isMobile,
+            hidden: tick.hidden,
           }"
           :style="{
             left: `${tick.position}%`,
@@ -77,28 +74,21 @@ const monthNames = [
   "Ноябрь",
   "Декабрь",
 ];
+const toggleOptions = [
+  { mode: "years", label: "Все года" },
+  { mode: "months", label: "Месяца" },
+];
 
 const props = defineProps({
-  minDate: {
-    type: Date,
-    required: true,
-  },
-  maxDate: {
-    type: Date,
-    required: true,
-  },
-  startDate: {
-    type: Date,
-    default: null,
-  },
-  endDate: {
-    type: Date,
-    default: null,
-  },
+  minDate: { type: Date, required: true },
+  maxDate: { type: Date, required: true },
+  startDate: { type: Date, default: null },
+  endDate: { type: Date, default: null },
 });
 
 const slider = ref(null);
 const viewMode = ref("years");
+const showToggle = ref(true);
 const startDate = ref(props.startDate || props.minDate);
 const endDate = ref(props.endDate || props.maxDate);
 const dragging = ref(null);
@@ -113,11 +103,10 @@ const maxDateValue = computed(() =>
     ? props.maxDate.getFullYear() * 12
     : getMonthValue(props.maxDate)
 );
-
 const startValue = computed(() => getMonthValue(startDate.value));
 const endValue = computed(() => getMonthValue(endDate.value));
-
 const totalRange = computed(() => maxDateValue.value - minDateValue.value);
+
 const trackLeft = computed(() =>
   Math.max(
     ((startValue.value - minDateValue.value) / totalRange.value) * 100,
@@ -133,33 +122,56 @@ const trackWidth = computed(() =>
 
 const startThumbPosition = computed(() => trackLeft.value);
 const endThumbPosition = computed(() => trackLeft.value + trackWidth.value);
-
 const formattedStartDate = computed(() => formatDate(startDate.value));
 const formattedEndDate = computed(() => formatDate(endDate.value));
 
 const ticks = computed(() => generateTicks());
 
-const isMobile = ref(false);
+const minDistanceBetweenTicks = ref(3);
+
+const updateMinDistance = () => {
+  const screenWidth = window.innerWidth;
+  const rangeYears = (maxDateValue.value - minDateValue.value) / 12;
+
+  if (screenWidth > 1200) {
+    minDistanceBetweenTicks.value = rangeYears > 10 ? 5 : 3;
+  } else if (screenWidth > 768) {
+    minDistanceBetweenTicks.value = rangeYears > 7 ? 6 : 4;
+  } else {
+    minDistanceBetweenTicks.value = rangeYears > 2 ? 15 : 10;
+  }
+};
+
+const checkToggleVisibility = () => {
+  const totalWidth = slider.value
+    ? slider.value.offsetWidth
+    : window.innerWidth;
+  const tickWidthEstimate = totalWidth / totalRange.value;
+  showToggle.value =
+    tickWidthEstimate >= minDistanceBetweenTicks.value &&
+    totalRange.value <= 120;
+};
 
 onMounted(() => {
   window.addEventListener("mousemove", onMouseMove);
   window.addEventListener("mouseup", onMouseUp);
   window.addEventListener("resize", () => {
-    isMobile.value = window.innerWidth <= 768;
+    updateMinDistance();
+    checkToggleVisibility();
   });
+  updateMinDistance();
+  checkToggleVisibility();
 });
 
 const switchView = (mode) => {
   viewMode.value = mode;
 };
-
 const startDrag = (type) => {
   dragging.value = type;
 };
 
 const onMouseMove = (event) => {
   if (!dragging.value) return;
-
   const rect = slider.value.getBoundingClientRect();
   const percent = Math.min(
     Math.max(((event.clientX - rect.left) / rect.width) * 100, 0),
@@ -168,11 +180,10 @@ const onMouseMove = (event) => {
   const value =
     minDateValue.value + Math.round((percent / 100) * totalRange.value);
 
-  if (dragging.value === "start" && value < endValue.value) {
+  if (dragging.value === "start" && value < endValue.value)
     updateDate(startDate, value);
-  } else if (dragging.value === "end" && value > startValue.value) {
+  else if (dragging.value === "end" && value > startValue.value)
     updateDate(endDate, value);
-  }
 };
 
 const onMouseUp = () => {
@@ -186,39 +197,52 @@ const updateDate = (dateRef, value) => {
 };
 
 const getMonthValue = (date) => date.getFullYear() * 12 + date.getMonth();
-
-const formatDate = (date) => {
-  const month = monthNames[date.getMonth()];
-  const year = date.getFullYear();
-  return `${month} ${year}`;
-};
+const formatDate = (date) =>
+  `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
 
 const generateTicks = () => {
   const ticksArray = [];
   const step = viewMode.value === "years" ? 12 : 1;
   const start = minDateValue.value;
   const end = maxDateValue.value;
+  let previousPosition = -Infinity;
 
   for (let i = start; i <= end; i += step) {
     const position = ((i - start) / totalRange.value) * 100;
     const isYear = i % 12 === 0;
     const label = formatTickLabel(i);
 
-    ticksArray.push({ position, label, isYear });
+    const hidden =
+      position - previousPosition < minDistanceBetweenTicks.value &&
+      !(i % 12 === 0);
+    if (!hidden || i % 12 === 0) previousPosition = position;
+
+    ticksArray.push({ position, label, isYear, hidden });
   }
 
-  return ticksArray;
+  const finalTicksArray = [];
+  let lastYearPosition = -Infinity;
+
+  ticksArray.forEach((tick) => {
+    if (tick.isYear) {
+      if (tick.position - lastYearPosition < minDistanceBetweenTicks.value) {
+        tick.hidden = true;
+      } else {
+        lastYearPosition = tick.position;
+      }
+    }
+    finalTicksArray.push(tick);
+  });
+
+  return finalTicksArray;
 };
 
 const formatTickLabel = (monthValue) => {
   const year = Math.floor(monthValue / 12);
   const monthIndex = monthValue % 12;
-
-  if (viewMode.value === "years" || monthIndex === 0) {
-    return year;
-  } else {
-    return monthNames[monthIndex].substring(0, 3);
-  }
+  return viewMode.value === "years" || monthIndex === 0
+    ? year
+    : monthNames[monthIndex].substring(0, 3);
 };
 </script>
 
@@ -227,7 +251,7 @@ const formatTickLabel = (monthValue) => {
   user-select: none;
   display: flex;
   justify-content: space-between;
-  padding: 50px 20px;
+  padding: 50px 35px;
   font-family: cursive;
 }
 .view-toggle button {
@@ -265,8 +289,8 @@ const formatTickLabel = (monthValue) => {
 }
 .thumb {
   position: absolute;
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   background-color: #fff;
   border: 5px solid #6ea6f7;
   border-radius: 50%;
@@ -274,25 +298,42 @@ const formatTickLabel = (monthValue) => {
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 1;
+  display: flex;
+  justify-content: center;
 }
 .tooltip {
   position: absolute;
-  top: -67px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: -71px;
   background-color: #fff;
   color: #6ea6f7;
-  border-radius: 4px;
+  border-radius: 10px;
   padding: 6px 14px;
   text-align: center;
-  box-shadow: 0px 0px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0px 0px 20px 9px rgba(0, 0, 0, 0.1);
   word-wrap: break-word;
   max-width: 100px;
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
-.tooltip_right {
-  top: 20px;
+.tooltip::before {
+  content: "";
+  position: absolute;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid rgb(255, 255, 255);
+  top: 98%;
 }
+.slider .thumb:last-child .tooltip::before {
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid rgb(255, 255, 255);
+  top: -26%;
+}
+.slider .thumb:last-child .tooltip {
+  top: 25px;
+}
+
 .ticks {
   position: relative;
   margin-top: 10px;
@@ -307,7 +348,7 @@ const formatTickLabel = (monthValue) => {
   font-weight: bold;
   font-size: 14px;
 }
-.hide-on-mobile {
+.ticks span.hidden {
   display: none;
 }
 
@@ -335,12 +376,15 @@ const formatTickLabel = (monthValue) => {
   }
 
   .tooltip {
-    top: -55px;
+    top: -60px;
     font-size: 12px;
     max-width: 100px;
   }
-  .tooltip_right {
-    top: 20px;
+  .slider .thumb:last-child .tooltip::before {
+    top: -34%;
+  }
+  .slider .thumb:last-child .tooltip {
+    top: 27px;
   }
 
   .ticks {
@@ -364,12 +408,15 @@ const formatTickLabel = (monthValue) => {
   }
 
   .tooltip {
-    top: -50px;
+    top: -55px;
     font-size: 10px;
     max-width: 80px;
   }
-  .tooltip_right {
-    top: 20px;
+  .slider .thumb:last-child .tooltip::before {
+    top: -35%;
+  }
+  .slider .thumb:last-child .tooltip {
+    top: 24px;
   }
 
   .ticks {

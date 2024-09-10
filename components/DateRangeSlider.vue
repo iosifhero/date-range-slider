@@ -131,36 +131,41 @@ const minDistanceBetweenTicks = ref(3);
 
 const updateMinDistance = () => {
   const screenWidth = window.innerWidth;
-  const rangeYears = (maxDateValue.value - minDateValue.value) / 12;
 
-  if (screenWidth > 1200) {
-    minDistanceBetweenTicks.value = rangeYears > 10 ? 5 : 3;
+  if (screenWidth > 1400) {
+    minDistanceBetweenTicks.value = 2;
+  } else if (screenWidth > 1200) {
+    minDistanceBetweenTicks.value = 3;
+  } else if (screenWidth > 1024) {
+    minDistanceBetweenTicks.value = 4;
   } else if (screenWidth > 768) {
-    minDistanceBetweenTicks.value = rangeYears > 7 ? 6 : 4;
+    minDistanceBetweenTicks.value = 6;
+  } else if (screenWidth > 480) {
+    minDistanceBetweenTicks.value = 10;
+  } else if (screenWidth > 320) {
+    minDistanceBetweenTicks.value = 13;
   } else {
-    minDistanceBetweenTicks.value = rangeYears > 2 ? 15 : 10;
+    minDistanceBetweenTicks.value = 15;
   }
 };
 
-const checkToggleVisibility = () => {
-  const totalWidth = slider.value
-    ? slider.value.offsetWidth
-    : window.innerWidth;
-  const tickWidthEstimate = totalWidth / totalRange.value;
-  showToggle.value =
-    tickWidthEstimate >= minDistanceBetweenTicks.value &&
-    totalRange.value <= 120;
-};
+// const checkToggleVisibility = () => {
+//   const totalWidth = slider.value
+//     ? slider.value.offsetWidth
+//     : window.innerWidth;
+//   const tickWidthEstimate = totalWidth / totalRange.value;
+//   showToggle.value = tickWidthEstimate >= minDistanceBetweenTicks.value;
+// };
 
 onMounted(() => {
   window.addEventListener("mousemove", onMouseMove);
   window.addEventListener("mouseup", onMouseUp);
   window.addEventListener("resize", () => {
     updateMinDistance();
-    checkToggleVisibility();
+    // checkToggleVisibility();
   });
   updateMinDistance();
-  checkToggleVisibility();
+  // checkToggleVisibility();
 });
 
 const switchView = (mode) => {
@@ -206,26 +211,54 @@ const generateTicks = () => {
   const start = minDateValue.value;
   const end = maxDateValue.value;
   let previousPosition = -Infinity;
+  let monthsCount = 0;
+
+  for (let i = start; i <= end; i += step) {
+    const position = ((i - start) / totalRange.value) * 100;
+
+    const hidden =
+      position - previousPosition < minDistanceBetweenTicks.value &&
+      !(i % 12 === 0);
+
+    if (!hidden) previousPosition = position;
+
+    if (!hidden && !(i % 12 === 0)) {
+      monthsCount++;
+    }
+  }
+
+  const maxMonth =
+    monthsCount / ((maxDateValue.value - minDateValue.value) / 12);
+  const displayedMonths = getAverageValues(maxMonth);
 
   for (let i = start; i <= end; i += step) {
     const position = ((i - start) / totalRange.value) * 100;
     const isYear = i % 12 === 0;
     const label = formatTickLabel(i);
 
-    const hidden =
-      position - previousPosition < minDistanceBetweenTicks.value &&
-      !(i % 12 === 0);
-    if (!hidden || i % 12 === 0) previousPosition = position;
+    let hidden;
+    if (isYear) {
+      hidden = false;
+    } else {
+      hidden = !displayedMonths.includes((i % 12) + 1);
+    }
 
     ticksArray.push({ position, label, isYear, hidden });
   }
 
+  return processTicks(ticksArray, monthsCount);
+};
+
+const processTicks = (ticksArray, monthsCount) => {
   const finalTicksArray = [];
   let lastYearPosition = -Infinity;
-
+  console.log(ticksArray);
   ticksArray.forEach((tick) => {
     if (tick.isYear) {
-      if (tick.position - lastYearPosition < minDistanceBetweenTicks.value) {
+      if (
+        !monthsCount &&
+        tick.position - lastYearPosition < minDistanceBetweenTicks.value
+      ) {
         tick.hidden = true;
       } else {
         lastYearPosition = tick.position;
@@ -236,6 +269,18 @@ const generateTicks = () => {
 
   return finalTicksArray;
 };
+
+function getAverageValues(n) {
+  const totalNumbers = 12;
+  const step = Math.floor(totalNumbers / (n + 1));
+  const result = [];
+
+  for (let i = 1; i <= n; i++) {
+    result.push(i * step + 1);
+  }
+
+  return result;
+}
 
 const formatTickLabel = (monthValue) => {
   const year = Math.floor(monthValue / 12);
